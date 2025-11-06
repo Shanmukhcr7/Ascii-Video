@@ -1,0 +1,21 @@
+body {
+  font-family: monospace;
+  background: #111;
+  color: #fff;
+  text-align: center;
+  margin-top: 50px;
+}
+.container {
+  background: #1e1e1e;
+  padding: 30px;
+  border-radius: 15px;
+  display: inline-block;
+}
+button {
+  background: #00ff80;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
