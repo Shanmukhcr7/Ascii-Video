@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS  # 🆕 Import CORS
+from flask_cors import CORS
 import cv2, os, numpy as np, tempfile, ffmpeg
 
 app = Flask(__name__)
-CORS(app, origins=["https://shanmukhcr7.github.io"])  # 🆕 Allow your GitHub Pages frontend
+CORS(app, origins=["https://shanmukhcr7.github.io"])  # ✅ Allow only your GitHub Pages frontend
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -35,6 +35,10 @@ def convert_frame_to_color_ascii(frame, width=80, brightness=1.0):
 def home():
     return jsonify({"message": "ASCII Video Converter API running!"})
 
+@app.route('/convert', methods=['OPTIONS'])
+def convert_options():
+    return '', 200
+
 @app.route('/convert', methods=['POST'])
 def convert_video():
     if 'video' not in request.files:
@@ -50,11 +54,15 @@ def convert_video():
     cap = cv2.VideoCapture(video_path)
     ascii_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt").name
 
+    frame_count = 0
     with open(ascii_output, "w", encoding="utf-8") as f:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+            frame_count += 1
+            if frame_count % 10 != 0:  # skip frames to save time
+                continue
             ascii_frame = convert_frame_to_color_ascii(frame, width, brightness)
             f.write(ascii_frame + "\n\n")
 
