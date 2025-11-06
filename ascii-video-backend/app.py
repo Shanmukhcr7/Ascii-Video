@@ -3,41 +3,43 @@ from flask_cors import CORS
 import cv2, os, numpy as np, tempfile, ffmpeg
 
 app = Flask(__name__)
-CORS(app, origins=["https://shanmukhcr7.github.io"])  # ✅ Allow only your GitHub Pages frontend
+CORS(app, origins=["https://shanmukhcr7.github.io"])  # Allow frontend
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 ascii_chars = " .:-=+*#%@"
 
-def convert_frame_to_color_ascii(frame, width=80, brightness=1.0):
+def frame_to_ascii_image(frame, width=120, brightness=1.0, font_scale=0.4, color=False):
+    """
+    Convert a single frame to an image of ASCII characters.
+    """
+    # Resize and grayscale
     height = int(frame.shape[0] * width / frame.shape[1] / 2)
-    if height <= 0:
-        height = 1
+    if height < 1: height = 1
     resized = cv2.resize(frame, (width, height))
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     gray = np.clip(gray * brightness, 0, 255).astype(np.uint8)
     normalized = gray / 255.0
-    lines = []
+
+    # Create blank image
+    char_w, char_h = 10, 18
+    canvas = np.ones((height * char_h, width * char_w, 3), dtype=np.uint8) * 0  # black bg
+
     for y in range(height):
-        row = []
         for x in range(width):
-            pixel_brightness = normalized[y][x]
-            b, g, r = resized[y, x]
-            index = int(pixel_brightness * (len(ascii_chars) - 1))
+            index = int(normalized[y][x] * (len(ascii_chars) - 1))
             char = ascii_chars[index]
-            color_char = f"\033[38;2;{r};{g};{b}m{char}\033[0m"
-            row.append(color_char)
-        lines.append("".join(row))
-    return "\n".join(lines)
+            color_val = resized[y, x] if color else (255, 255, 255)
+            cv2.putText(canvas, char, (x * char_w, y * char_h + char_h),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, color_val, 1, cv2.LINE_AA)
+    return canvas
+
 
 @app.route('/')
 def home():
-    return jsonify({"message": "ASCII Video Converter API running!"})
+    return jsonify({"message": "🎞️ ASCII Video Converter API running!"})
 
-@app.route('/convert', methods=['OPTIONS'])
-def convert_options():
-    return '', 200
 
 @app.route('/convert', methods=['POST'])
 def convert_video():
@@ -45,29 +47,45 @@ def convert_video():
         return jsonify({"error": "No video file provided"}), 400
 
     video = request.files['video']
-    width = int(request.form.get('width', 80))
+    width = int(request.form.get('width', 120))
     brightness = float(request.form.get('brightness', 1.0))
+    color = request.form.get('color', 'false').lower() == 'true'
 
     video_path = os.path.join(UPLOAD_FOLDER, video.filename)
     video.save(video_path)
 
     cap = cv2.VideoCapture(video_path)
-    ascii_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt").name
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    frame_count = 0
-    with open(ascii_output, "w", encoding="utf-8") as f:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            frame_count += 1
-            if frame_count % 10 != 0:  # skip frames to save time
-                continue
-            ascii_frame = convert_frame_to_color_ascii(frame, width, brightness)
-            f.write(ascii_frame + "\n\n")
+    # Temp output path
+    output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+
+    ret, test_frame = cap.read()
+    if not ret:
+        return jsonify({"error": "Could not read video"}), 400
+
+    h, w, _ = frame_to_ascii_image(test_frame, width).shape
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+
+    frame_no = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_no += 1
+        ascii_frame = frame_to_ascii_image(frame, width, brightness, color=color)
+        out.write(ascii_frame)
+
+        # Optional: skip frames for speed
+        if frame_no % 2 == 0:
+            continue
 
     cap.release()
-    return send_file(ascii_output, as_attachment=True, download_name="ascii_video.txt")
+    out.release()
+
+    return send_file(output_path, as_attachment=True, download_name="ascii_video.mp4")
+
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
