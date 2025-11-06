@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-import cv2, os, numpy as np, tempfile, ffmpeg
+import cv2, os, numpy as np, tempfile, ffmpeg, traceback
 
 app = Flask(__name__)
-CORS(app, origins=["https://shanmukhcr7.github.io"])  # Allow frontend
+
+# ✅ FIX: Apply CORS globally (including send_file responses)
+CORS(app, resources={r"/*": {"origins": ["https://shanmukhcr7.github.io"]}})
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -14,17 +16,16 @@ def frame_to_ascii_image(frame, width=120, brightness=1.0, font_scale=0.4, color
     """
     Convert a single frame to an image of ASCII characters.
     """
-    # Resize and grayscale
     height = int(frame.shape[0] * width / frame.shape[1] / 2)
-    if height < 1: height = 1
+    if height < 1:
+        height = 1
     resized = cv2.resize(frame, (width, height))
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     gray = np.clip(gray * brightness, 0, 255).astype(np.uint8)
     normalized = gray / 255.0
 
-    # Create blank image
     char_w, char_h = 10, 18
-    canvas = np.ones((height * char_h, width * char_w, 3), dtype=np.uint8) * 0  # black bg
+    canvas = np.ones((height * char_h, width * char_w, 3), dtype=np.uint8) * 0  # black background
 
     for y in range(height):
         for x in range(width):
@@ -43,48 +44,58 @@ def home():
 
 @app.route('/convert', methods=['POST'])
 def convert_video():
-    if 'video' not in request.files:
-        return jsonify({"error": "No video file provided"}), 400
+    try:
+        if 'video' not in request.files:
+            return jsonify({"error": "No video file provided"}), 400
 
-    video = request.files['video']
-    width = int(request.form.get('width', 120))
-    brightness = float(request.form.get('brightness', 1.0))
-    color = request.form.get('color', 'false').lower() == 'true'
+        video = request.files['video']
+        width = int(request.form.get('width', 120))
+        brightness = float(request.form.get('brightness', 1.0))
+        color = request.form.get('color', 'false').lower() == 'true'
 
-    video_path = os.path.join(UPLOAD_FOLDER, video.filename)
-    video.save(video_path)
+        video_path = os.path.join(UPLOAD_FOLDER, video.filename)
+        video.save(video_path)
 
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if not fps or fps == 0:
+            fps = 24.0  # fallback to default
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Temp output path
-    output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+        # Output path for converted video
+        output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
 
-    ret, test_frame = cap.read()
-    if not ret:
-        return jsonify({"error": "Could not read video"}), 400
-
-    h, w, _ = frame_to_ascii_image(test_frame, width).shape
-    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-
-    frame_no = 0
-    while True:
-        ret, frame = cap.read()
+        ret, test_frame = cap.read()
         if not ret:
-            break
-        frame_no += 1
-        ascii_frame = frame_to_ascii_image(frame, width, brightness, color=color)
-        out.write(ascii_frame)
+            return jsonify({"error": "Could not read video"}), 400
 
-        # Optional: skip frames for speed
-        if frame_no % 2 == 0:
-            continue
+        h, w, _ = frame_to_ascii_image(test_frame, width).shape
+        out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
 
-    cap.release()
-    out.release()
+        frame_no = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame_no += 1
 
-    return send_file(output_path, as_attachment=True, download_name="ascii_video.mp4")
+            # Convert frame
+            ascii_frame = frame_to_ascii_image(frame, width, brightness, color=color)
+            out.write(ascii_frame)
+
+            # Skip frames to reduce CPU usage (Render free plans time out at ~90s)
+            if frame_no % 2 == 0:
+                continue
+
+        cap.release()
+        out.release()
+
+        return send_file(output_path, as_attachment=True, download_name="ascii_video.mp4")
+
+    except Exception as e:
+        print("🔥 ERROR during /convert:", str(e))
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
