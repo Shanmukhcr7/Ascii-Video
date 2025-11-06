@@ -5,7 +5,7 @@ const brightnessInput = document.getElementById("brightnessInput");
 const statusBox = document.getElementById("status");
 
 // ✅ Replace this with your Render API URL
-const API_URL = "https://ascii-video-api.onrender.com/convert";
+const API_URL = "https://ascii-video.onrender.com";
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -41,3 +41,4 @@ form.addEventListener("submit", async (e) => {
     statusBox.innerText = "❌ Error: " + error.message;
   }
 });
+
