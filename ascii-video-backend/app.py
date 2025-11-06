@@ -1,31 +1,23 @@
-import cv2
-import os
-import sys
-import time
-import numpy as np
-import tempfile
-import ffmpeg
 from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS  # 🆕 Import CORS
+import cv2, os, numpy as np, tempfile, ffmpeg
 
-# ---------- FLASK SETUP ----------
 app = Flask(__name__)
+CORS(app, origins=["https://shanmukhcr7.github.io"])  # 🆕 Allow your GitHub Pages frontend
+
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# ---------- ASCII CHAR SET ----------
 ascii_chars = " .:-=+*#%@"
 
-# ---------- FRAME TO ASCII CONVERSION ----------
 def convert_frame_to_color_ascii(frame, width=80, brightness=1.0):
     height = int(frame.shape[0] * width / frame.shape[1] / 2)
     if height <= 0:
         height = 1
-
     resized = cv2.resize(frame, (width, height))
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     gray = np.clip(gray * brightness, 0, 255).astype(np.uint8)
     normalized = gray / 255.0
-
     lines = []
     for y in range(height):
         row = []
@@ -39,13 +31,9 @@ def convert_frame_to_color_ascii(frame, width=80, brightness=1.0):
         lines.append("".join(row))
     return "\n".join(lines)
 
-# ---------- API ROUTES ----------
 @app.route('/')
 def home():
-    return jsonify({
-        "message": "🎞️ ASCII Video Converter API is running!",
-        "usage": "POST a video file to /convert with form-data { video, width(optional), brightness(optional) }"
-    })
+    return jsonify({"message": "ASCII Video Converter API running!"})
 
 @app.route('/convert', methods=['POST'])
 def convert_video():
@@ -71,9 +59,7 @@ def convert_video():
             f.write(ascii_frame + "\n\n")
 
     cap.release()
-
     return send_file(ascii_output, as_attachment=True, download_name="ascii_video.txt")
 
-# ---------- RUN LOCALLY ----------
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
